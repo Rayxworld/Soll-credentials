@@ -1,0 +1,33 @@
+﻿# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+.stellar/
+.soroban/
+
+# Rust
+**/target/
+**/*.wasm
+
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/venv/
+
+# Node.js
+**/node_modules/
+**/.next/
+**/out/
+**/dist/
+
+# Local development
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
