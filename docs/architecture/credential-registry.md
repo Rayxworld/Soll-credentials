@@ -1,4 +1,4 @@
-﻿# SOLL Credential - Credential Registry Architecture
+# SOLL Credential - Credential Registry Architecture
 
 ## 1. Purpose
 
@@ -25,7 +25,7 @@ Every organisation has an independent on-chain owner address.
 The platform must not use one shared owner account for all tenants.
 
 Ownership transfer requires authorisation from the current owner
-and acceptance by the proposed new owner.
+and acceptance by the proposed new owner in the same transaction.
 
 The account custody mode is application-level metadata. The
 contract enforces owner-address authorisation regardless of mode.
@@ -44,7 +44,7 @@ Issuer:
 
 Credential:
 - Organisation ID.
-- Random 32-byte credential ID.
+- Random 32-byte credential ID, globally unique across the registry.
 - 32-byte cryptographic commitment.
 - Original issuing address.
 - Issuance ledger timestamp.
@@ -67,31 +67,41 @@ The blinding value and credential contents remain off-chain.
 The contract receives only the resulting 32-byte commitment.
 
 The backend must retain the information required to verify the
-commitment later.
+commitment later. The blockchain record alone does not establish
+the validity of the credential's W3C proof or disclose its contents.
 
 ## 5. Authorisation
 
 Organisation registration:
 - The proposed owner authorises registration.
+- An organisation ID cannot be registered more than once.
 
 Issuer management:
-- Only the organisation owner can add or remove issuers.
+- Only the organisation owner can authorise or remove issuers.
+- Issuer authorisation is scoped to its organisation.
+- An inactive organisation cannot authorise issuers.
 
 Credential issuance:
-- The issuer must be active.
-- The organisation must be active.
-- The issuer must belong to that organisation.
+- The organisation must exist and be active.
+- The issuer must be authorised and active.
+- The issuer must authorise the anchoring transaction.
+- Credential IDs must be globally unique.
 
 Credential revocation:
 - The organisation owner or original issuing account may revoke.
-- An arbitrary issuer cannot revoke another issuer's credentials.
+- An unrelated address cannot revoke a credential.
+- Removing an issuer does not remove its authority to revoke
+  credentials it previously issued.
+- A revoked credential cannot be revoked again.
 
 Ownership transfer:
 - Current owner authorises the transfer.
 - New owner authorises acceptance.
 
-Public verification:
-- Requires no authentication or wallet connection.
+Public reads:
+- Registry read operations require no wallet connection.
+- Issuer authorisation queries return false if the organisation
+  is missing or inactive, even if an issuer record still exists.
 
 ## 6. Tenant Isolation
 
@@ -102,11 +112,13 @@ A credential operation must verify that its organisation is
 active and that the authenticated account has the required
 authority for that organisation.
 
+Credential IDs are globally unique across organisations.
+
 A tenant must not be able to modify another tenant's records.
 
 ## 7. Credential Lifecycle
 
-1. Organisation is registered.
+1. Organisation is registered by its proposed owner.
 2. Organisation authorises one or more issuers.
 3. Backend generates and secures the credential.
 4. Backend calculates its cryptographic commitment.
@@ -114,32 +126,54 @@ A tenant must not be able to modify another tenant's records.
 6. Public verification retrieves the registry record.
 7. The organisation owner or original issuer may revoke it.
 
+Organisation lifecycle:
+- The owner may deactivate an active organisation.
+- The owner may reactivate an inactive organisation.
+- Deactivation prevents new issuer authorisations and credential
+  anchoring.
+- Existing credentials remain in the registry and may still be
+  revoked by the organisation owner or original issuer.
+- Existing issuer records are retained during deactivation.
+  Reactivation restores their operational authorisation.
+
 Revocation is permanent in the first contract version.
 
-## 8. Contract Operations
+## 8. Implemented Contract Operations
 
-Proposed operations:
+Write operations:
 
-- initialize
 - register_organization
-- add_issuer
-- remove_issuer
 - transfer_ownership
+- deactivate_organization
+- reactivate_organization
+- authorize_issuer
+- remove_issuer
 - anchor_credential
 - revoke_credential
-- verify_credential
 
-Exact signatures and storage types will be finalised against
-the selected Soroban SDK version.
+Read operations:
+
+- get_organization
+- is_issuer_authorized
+- get_credential
+
+Business-rule failures return typed RegistryError values where
+defined. Authentication failures are enforced through Soroban
+address authorisation.
+
+There is no global organisation initialization operation.
+Each organisation registers independently under its own owner.
 
 ## 9. Events
 
-The contract should emit events for:
+The contract emits events for:
 
 - Organisation registration
-- Issuer addition
-- Issuer removal
 - Ownership transfer
+- Organisation deactivation
+- Organisation reactivation
+- Issuer authorisation
+- Issuer removal
 - Credential anchoring
 - Credential revocation
 
@@ -148,11 +182,18 @@ Events must not expose personal information.
 ## 10. Storage and Security
 
 - Use persistent storage for organisation, issuer and credential
-  records where appropriate.
-- Manage storage TTL and extension costs.
-- Reject duplicate credential IDs within an organisation.
+  records.
+- Extend persistent-entry TTL when remaining TTL falls below
+  the configured threshold.
+- Current policy: 29-day renewal threshold and 30-day extension
+  target, using 17,280 ledgers per day.
+- Persistent entries may expire and require restoration if they
+  are not renewed. Production availability requirements may
+  therefore require an off-chain keeper strategy.
+- Reject duplicate organisation IDs.
+- Reject globally duplicate credential IDs.
 - Prevent issuance under inactive organisations or issuers.
-- Prevent reactivation of revoked credentials.
+- Revocation is terminal; the contract has no credential reactivation operation.
 - Keep contract upgrade authority separate from tenant ownership.
 - Test authorisation failures and cross-tenant access attempts.
 - Keep all personal data off-chain.

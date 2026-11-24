@@ -1,11 +1,32 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractevent, contractimpl, contracttype, Address, BytesN, Env};
+use soroban_sdk::{
+    contract, contracterror, contractevent, contractimpl, contracttype, Address, BytesN, Env,
+};
 
 const DAY_IN_LEDGERS: u32 = 17_280;
 const TTL_THRESHOLD: u32 = 29 * DAY_IN_LEDGERS;
 const TTL_BUMP_AMOUNT: u32 = 30 * DAY_IN_LEDGERS;
 
+// Stable error codes returned by the credential registry.
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum RegistryError {
+    OrganizationAlreadyExists = 1,
+    OrganizationNotFound = 2,
+    OrganizationInactive = 3,
+    AlreadyCurrentOwner = 4,
+    IssuerAlreadyAuthorized = 5,
+    IssuerNotAuthorized = 6,
+    IssuerInactive = 7,
+    CredentialAlreadyExists = 8,
+    CredentialNotFound = 9,
+    CredentialAlreadyRevoked = 10,
+    UnauthorizedRevocation = 11,
+    OrganizationAlreadyInactive = 12,
+    OrganizationAlreadyActive = 13,
+}
 /// Renews a persistent entry when its remaining TTL falls below the threshold.
 fn extend_persistent_ttl(env: &Env, key: &DataKey) {
     env.storage()
@@ -21,6 +42,28 @@ pub struct OrganizationRegistered {
     pub owner: Address,
 }
 
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizationDeactivated {
+    #[topic]
+    pub organization_id: BytesN<32>,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizationReactivated {
+    #[topic]
+    pub organization_id: BytesN<32>,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnershipTransferred {
+    #[topic]
+    pub organization_id: BytesN<32>,
+    pub previous_owner: Address,
+    pub new_owner: Address,
+}
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IssuerAuthorized {
@@ -99,13 +142,17 @@ pub struct CredentialRegistry;
 
 #[contractimpl]
 impl CredentialRegistry {
-    pub fn register_organization(env: Env, organization_id: BytesN<32>, owner: Address) {
+    pub fn register_organization(
+        env: Env,
+        organization_id: BytesN<32>,
+        owner: Address,
+    ) -> Result<(), RegistryError> {
         owner.require_auth();
 
         let key = DataKey::Organization(organization_id.clone());
 
         if env.storage().persistent().has(&key) {
-            panic!("organization already exists");
+            return Err(RegistryError::OrganizationAlreadyExists);
         }
 
         let organization = Organization {
@@ -121,35 +168,145 @@ impl CredentialRegistry {
             owner,
         }
         .publish(&env);
+
+        Ok(())
+    }
+    pub fn transfer_ownership(
+        env: Env,
+        organization_id: BytesN<32>,
+        new_owner: Address,
+    ) -> Result<(), RegistryError> {
+        let organization_key = DataKey::Organization(organization_id.clone());
+
+        let mut organization: Organization = env
+            .storage()
+            .persistent()
+            .get(&organization_key)
+            .ok_or(RegistryError::OrganizationNotFound)?;
+
+        extend_persistent_ttl(&env, &organization_key);
+
+        let previous_owner = organization.owner.clone();
+
+        if previous_owner == new_owner {
+            return Err(RegistryError::AlreadyCurrentOwner);
+        }
+
+        previous_owner.require_auth();
+        new_owner.require_auth();
+
+        organization.owner = new_owner.clone();
+
+        env.storage()
+            .persistent()
+            .set(&organization_key, &organization);
+
+        extend_persistent_ttl(&env, &organization_key);
+
+        OwnershipTransferred {
+            organization_id,
+            previous_owner,
+            new_owner,
+        }
+        .publish(&env);
+
+        Ok(())
+    }
+    pub fn deactivate_organization(
+        env: Env,
+        organization_id: BytesN<32>,
+    ) -> Result<(), RegistryError> {
+        let organization_key = DataKey::Organization(organization_id.clone());
+
+        let mut organization: Organization = env
+            .storage()
+            .persistent()
+            .get(&organization_key)
+            .ok_or(RegistryError::OrganizationNotFound)?;
+
+        organization.owner.require_auth();
+
+        if !organization.active {
+            return Err(RegistryError::OrganizationAlreadyInactive);
+        }
+
+        organization.active = false;
+
+        env.storage()
+            .persistent()
+            .set(&organization_key, &organization);
+
+        extend_persistent_ttl(&env, &organization_key);
+
+        OrganizationDeactivated { organization_id }.publish(&env);
+
+        Ok(())
     }
 
-    pub fn get_organization(env: Env, organization_id: BytesN<32>) -> Organization {
+    pub fn reactivate_organization(
+        env: Env,
+        organization_id: BytesN<32>,
+    ) -> Result<(), RegistryError> {
+        let organization_key = DataKey::Organization(organization_id.clone());
+
+        let mut organization: Organization = env
+            .storage()
+            .persistent()
+            .get(&organization_key)
+            .ok_or(RegistryError::OrganizationNotFound)?;
+
+        organization.owner.require_auth();
+
+        if organization.active {
+            return Err(RegistryError::OrganizationAlreadyActive);
+        }
+
+        organization.active = true;
+
+        env.storage()
+            .persistent()
+            .set(&organization_key, &organization);
+
+        extend_persistent_ttl(&env, &organization_key);
+
+        OrganizationReactivated { organization_id }.publish(&env);
+
+        Ok(())
+    }
+
+    pub fn get_organization(
+        env: Env,
+        organization_id: BytesN<32>,
+    ) -> Result<Organization, RegistryError> {
         let key = DataKey::Organization(organization_id);
 
-        match env.storage().persistent().get(&key) {
-            Some(organization) => {
-                extend_persistent_ttl(&env, &key);
-                organization
-            }
-            None => panic!("organization not found"),
-        }
-    }
+        let organization = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(RegistryError::OrganizationNotFound)?;
 
-    /// Authorises an issuer for one organisation.
-    /// Only the organisation's current owner can do this.
-    pub fn authorize_issuer(env: Env, organization_id: BytesN<32>, issuer: Address) {
+        extend_persistent_ttl(&env, &key);
+
+        Ok(organization)
+    }
+    pub fn authorize_issuer(
+        env: Env,
+        organization_id: BytesN<32>,
+        issuer: Address,
+    ) -> Result<(), RegistryError> {
         let organization_key = DataKey::Organization(organization_id.clone());
 
         let organization: Organization = env
             .storage()
             .persistent()
             .get(&organization_key)
-            .unwrap_or_else(|| panic!("organization not found"));
+            .ok_or(RegistryError::OrganizationNotFound)?;
 
         extend_persistent_ttl(&env, &organization_key);
 
         if !organization.active {
-            panic!("organization is inactive");
+            return Err(RegistryError::OrganizationInactive);
         }
 
         organization.owner.require_auth();
@@ -157,7 +314,7 @@ impl CredentialRegistry {
         let issuer_key = DataKey::Issuer(organization_id.clone(), issuer.clone());
 
         if env.storage().persistent().has(&issuer_key) {
-            panic!("issuer already authorized");
+            return Err(RegistryError::IssuerAlreadyAuthorized);
         }
 
         env.storage()
@@ -171,17 +328,21 @@ impl CredentialRegistry {
             issuer,
         }
         .publish(&env);
-    }
 
-    /// Removes an issuer's authority within one organisation.
-    pub fn remove_issuer(env: Env, organization_id: BytesN<32>, issuer: Address) {
+        Ok(())
+    }
+    pub fn remove_issuer(
+        env: Env,
+        organization_id: BytesN<32>,
+        issuer: Address,
+    ) -> Result<(), RegistryError> {
         let organization_key = DataKey::Organization(organization_id.clone());
 
         let organization: Organization = env
             .storage()
             .persistent()
             .get(&organization_key)
-            .unwrap_or_else(|| panic!("organization not found"));
+            .ok_or(RegistryError::OrganizationNotFound)?;
 
         extend_persistent_ttl(&env, &organization_key);
 
@@ -190,7 +351,7 @@ impl CredentialRegistry {
         let issuer_key = DataKey::Issuer(organization_id.clone(), issuer.clone());
 
         if !env.storage().persistent().has(&issuer_key) {
-            panic!("issuer not authorized");
+            return Err(RegistryError::IssuerNotAuthorized);
         }
 
         env.storage().persistent().remove(&issuer_key);
@@ -200,15 +361,28 @@ impl CredentialRegistry {
             issuer,
         }
         .publish(&env);
+
+        Ok(())
     }
-
-    /// Publicly checks whether an address is an active issuer.
     pub fn is_issuer_authorized(env: Env, organization_id: BytesN<32>, issuer: Address) -> bool {
-        let key = DataKey::Issuer(organization_id, issuer);
+        let organization_key = DataKey::Organization(organization_id.clone());
 
-        match env.storage().persistent().get::<_, Issuer>(&key) {
+        let organization: Organization = match env.storage().persistent().get(&organization_key) {
+            Some(record) => record,
+            None => return false,
+        };
+
+        extend_persistent_ttl(&env, &organization_key);
+
+        if !organization.active {
+            return false;
+        }
+
+        let issuer_key = DataKey::Issuer(organization_id, issuer);
+
+        match env.storage().persistent().get::<_, Issuer>(&issuer_key) {
             Some(record) => {
-                extend_persistent_ttl(&env, &key);
+                extend_persistent_ttl(&env, &issuer_key);
                 record.active
             }
             None => false,
@@ -225,19 +399,19 @@ impl CredentialRegistry {
         credential_id: BytesN<32>,
         commitment: BytesN<32>,
         issuer: Address,
-    ) {
+    ) -> Result<(), RegistryError> {
         let organization_key = DataKey::Organization(organization_id.clone());
 
         let organization: Organization = env
             .storage()
             .persistent()
             .get(&organization_key)
-            .unwrap_or_else(|| panic!("organization not found"));
+            .ok_or(RegistryError::OrganizationNotFound)?;
 
         extend_persistent_ttl(&env, &organization_key);
 
         if !organization.active {
-            panic!("organization is inactive");
+            return Err(RegistryError::OrganizationInactive);
         }
 
         let issuer_key = DataKey::Issuer(organization_id.clone(), issuer.clone());
@@ -246,12 +420,12 @@ impl CredentialRegistry {
             .storage()
             .persistent()
             .get(&issuer_key)
-            .unwrap_or_else(|| panic!("issuer not authorized"));
+            .ok_or(RegistryError::IssuerNotAuthorized)?;
 
         extend_persistent_ttl(&env, &issuer_key);
 
         if !issuer_record.active {
-            panic!("issuer is inactive");
+            return Err(RegistryError::IssuerInactive);
         }
 
         // The issuing Stellar account must authorize this transaction.
@@ -261,7 +435,7 @@ impl CredentialRegistry {
         let credential_key = DataKey::Credential(credential_id.clone());
 
         if env.storage().persistent().has(&credential_key) {
-            panic!("credential already exists");
+            return Err(RegistryError::CredentialAlreadyExists);
         }
 
         let record = CredentialRecord {
@@ -282,6 +456,8 @@ impl CredentialRegistry {
             commitment,
         }
         .publish(&env);
+
+        Ok(())
     }
 
     /// Permanently revokes an anchored credential.
@@ -289,19 +465,23 @@ impl CredentialRegistry {
     /// Only the organisation owner or the original issuer can revoke it.
     /// Removing an issuer does not remove their authority over credentials
     /// they previously issued.
-    pub fn revoke_credential(env: Env, credential_id: BytesN<32>, revoked_by: Address) {
+    pub fn revoke_credential(
+        env: Env,
+        credential_id: BytesN<32>,
+        revoked_by: Address,
+    ) -> Result<(), RegistryError> {
         let credential_key = DataKey::Credential(credential_id.clone());
 
         let mut record: CredentialRecord = env
             .storage()
             .persistent()
             .get(&credential_key)
-            .unwrap_or_else(|| panic!("credential not found"));
+            .ok_or(RegistryError::CredentialNotFound)?;
 
         extend_persistent_ttl(&env, &credential_key);
 
         if record.revoked {
-            panic!("credential already revoked");
+            return Err(RegistryError::CredentialAlreadyRevoked);
         }
 
         let organization_key = DataKey::Organization(record.organization_id.clone());
@@ -310,7 +490,7 @@ impl CredentialRegistry {
             .storage()
             .persistent()
             .get(&organization_key)
-            .unwrap_or_else(|| panic!("organization not found"));
+            .ok_or(RegistryError::OrganizationNotFound)?;
 
         extend_persistent_ttl(&env, &organization_key);
 
@@ -318,7 +498,7 @@ impl CredentialRegistry {
         let is_original_issuer = revoked_by == record.issuer;
 
         if !is_owner && !is_original_issuer {
-            panic!("unauthorized revocation");
+            return Err(RegistryError::UnauthorizedRevocation);
         }
 
         revoked_by.require_auth();
@@ -334,6 +514,8 @@ impl CredentialRegistry {
             revoked_by,
         }
         .publish(&env);
+
+        Ok(())
     }
     /// Retrieves an anchored credential record.
     ///

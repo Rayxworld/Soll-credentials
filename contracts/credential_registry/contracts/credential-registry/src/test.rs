@@ -3,8 +3,8 @@
 use super::*;
 
 use soroban_sdk::{
-    testutils::{storage::Persistent as _, Address as _, Ledger as _},
-    Address, BytesN, Env,
+    testutils::{storage::Persistent as _, Address as _, Ledger as _, MockAuth, MockAuthInvoke},
+    Address, BytesN, Env, IntoVal,
 };
 
 fn setup() -> (Env, Address, CredentialRegistryClient<'static>) {
@@ -98,7 +98,6 @@ fn test_remove_issuer() {
 }
 
 #[test]
-#[should_panic]
 fn test_duplicate_issuer_authorization_rejected() {
     let (env, _, client) = setup();
 
@@ -108,7 +107,13 @@ fn test_duplicate_issuer_authorization_rejected() {
 
     client.register_organization(&organization_id, &owner);
     client.authorize_issuer(&organization_id, &issuer);
-    client.authorize_issuer(&organization_id, &issuer);
+    assert_eq!(
+        client
+            .try_authorize_issuer(&organization_id, &issuer)
+            .unwrap_err()
+            .unwrap(),
+        RegistryError::IssuerAlreadyAuthorized
+    );
 }
 
 #[test]
@@ -187,7 +192,6 @@ fn test_unauthorized_issuer_cannot_anchor_credential() {
 }
 
 #[test]
-#[should_panic]
 fn test_removed_issuer_cannot_anchor_credential() {
     let (env, _, client) = setup();
 
@@ -202,11 +206,16 @@ fn test_removed_issuer_cannot_anchor_credential() {
     client.authorize_issuer(&organization_id, &issuer);
     client.remove_issuer(&organization_id, &issuer);
 
-    client.anchor_credential(&organization_id, &credential_id, &commitment, &issuer);
+    assert_eq!(
+        client
+            .try_anchor_credential(&organization_id, &credential_id, &commitment, &issuer)
+            .unwrap_err()
+            .unwrap(),
+        RegistryError::IssuerNotAuthorized
+    );
 }
 
 #[test]
-#[should_panic]
 fn test_credential_id_is_globally_unique() {
     let (env, _, client) = setup();
 
@@ -230,11 +239,16 @@ fn test_credential_id_is_globally_unique() {
     client.anchor_credential(&organization_a, &credential_id, &commitment_a, &issuer_a);
 
     // The same ID must be rejected, even under a different organisation.
-    client.anchor_credential(&organization_b, &credential_id, &commitment_b, &issuer_b);
+    assert_eq!(
+        client
+            .try_anchor_credential(&organization_b, &credential_id, &commitment_b, &issuer_b)
+            .unwrap_err()
+            .unwrap(),
+        RegistryError::CredentialAlreadyExists
+    );
 }
 
 #[test]
-#[should_panic]
 fn test_duplicate_organization_rejected() {
     let (env, _, client) = setup();
 
@@ -242,7 +256,13 @@ fn test_duplicate_organization_rejected() {
     let owner = Address::generate(&env);
 
     client.register_organization(&organization_id, &owner);
-    client.register_organization(&organization_id, &owner);
+    assert_eq!(
+        client
+            .try_register_organization(&organization_id, &owner)
+            .unwrap_err()
+            .unwrap(),
+        RegistryError::OrganizationAlreadyExists
+    );
 }
 
 #[test]
@@ -303,7 +323,6 @@ fn test_original_issuer_can_revoke_credential() {
 }
 
 #[test]
-#[should_panic]
 fn test_unrelated_address_cannot_revoke_credential() {
     let (env, _, client) = setup();
 
@@ -319,11 +338,16 @@ fn test_unrelated_address_cannot_revoke_credential() {
     client.authorize_issuer(&organization_id, &issuer);
     client.anchor_credential(&organization_id, &credential_id, &commitment, &issuer);
 
-    client.revoke_credential(&credential_id, &unrelated);
+    assert_eq!(
+        client
+            .try_revoke_credential(&credential_id, &unrelated)
+            .unwrap_err()
+            .unwrap(),
+        RegistryError::UnauthorizedRevocation
+    );
 }
 
 #[test]
-#[should_panic]
 fn test_already_revoked_credential_cannot_be_revoked_again() {
     let (env, _, client) = setup();
 
@@ -339,18 +363,29 @@ fn test_already_revoked_credential_cannot_be_revoked_again() {
     client.anchor_credential(&organization_id, &credential_id, &commitment, &issuer);
 
     client.revoke_credential(&credential_id, &owner);
-    client.revoke_credential(&credential_id, &owner);
+    assert_eq!(
+        client
+            .try_revoke_credential(&credential_id, &owner)
+            .unwrap_err()
+            .unwrap(),
+        RegistryError::CredentialAlreadyRevoked
+    );
 }
 
 #[test]
-#[should_panic]
 fn test_nonexistent_credential_cannot_be_revoked() {
     let (env, _, client) = setup();
 
     let credential_id = BytesN::from_array(&env, &[52u8; 32]);
     let owner = Address::generate(&env);
 
-    client.revoke_credential(&credential_id, &owner);
+    assert_eq!(
+        client
+            .try_revoke_credential(&credential_id, &owner)
+            .unwrap_err()
+            .unwrap(),
+        RegistryError::CredentialNotFound
+    );
 }
 
 #[test]
@@ -519,4 +554,327 @@ fn test_credential_ttl_is_extended_on_access() {
         env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
 
     assert!(ttl_after_access >= TTL_BUMP_AMOUNT);
+}
+
+// --------------------------------------------------
+// Ownership transfer authorization tests
+// --------------------------------------------------
+
+#[test]
+fn test_ownership_transfer_requires_both_parties() {
+    let (env, contract_id, client) = setup();
+
+    let organization_id = BytesN::from_array(&env, &[101u8; 32]);
+    let previous_owner = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+
+    client.register_organization(&organization_id, &previous_owner);
+
+    let transfer_invocation = MockAuthInvoke {
+        contract: &contract_id,
+        fn_name: "transfer_ownership",
+        args: (&organization_id, &new_owner).into_val(&env),
+        sub_invokes: &[],
+    };
+
+    env.mock_auths(&[
+        MockAuth {
+            address: &previous_owner,
+            invoke: &transfer_invocation,
+        },
+        MockAuth {
+            address: &new_owner,
+            invoke: &transfer_invocation,
+        },
+    ]);
+
+    client.transfer_ownership(&organization_id, &new_owner);
+
+    let organization = client.get_organization(&organization_id);
+
+    assert_eq!(organization.owner, new_owner);
+    assert_ne!(organization.owner, previous_owner);
+}
+
+#[test]
+#[should_panic]
+fn test_ownership_transfer_fails_without_previous_owner_authorization() {
+    let (env, contract_id, client) = setup();
+
+    let organization_id = BytesN::from_array(&env, &[102u8; 32]);
+    let previous_owner = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+
+    client.register_organization(&organization_id, &previous_owner);
+
+    let transfer_invocation = MockAuthInvoke {
+        contract: &contract_id,
+        fn_name: "transfer_ownership",
+        args: (&organization_id, &new_owner).into_val(&env),
+        sub_invokes: &[],
+    };
+
+    // Only the proposed new owner authorises the transfer.
+    env.mock_auths(&[MockAuth {
+        address: &new_owner,
+        invoke: &transfer_invocation,
+    }]);
+
+    client.transfer_ownership(&organization_id, &new_owner);
+}
+
+#[test]
+#[should_panic]
+fn test_ownership_transfer_fails_without_new_owner_acceptance() {
+    let (env, contract_id, client) = setup();
+
+    let organization_id = BytesN::from_array(&env, &[103u8; 32]);
+    let previous_owner = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+
+    client.register_organization(&organization_id, &previous_owner);
+
+    let transfer_invocation = MockAuthInvoke {
+        contract: &contract_id,
+        fn_name: "transfer_ownership",
+        args: (&organization_id, &new_owner).into_val(&env),
+        sub_invokes: &[],
+    };
+
+    // Only the current owner authorises the transfer.
+    env.mock_auths(&[MockAuth {
+        address: &previous_owner,
+        invoke: &transfer_invocation,
+    }]);
+
+    client.transfer_ownership(&organization_id, &new_owner);
+}
+
+// --------------------------------------------------
+// Organisation lifecycle tests
+// --------------------------------------------------
+
+#[test]
+fn test_organization_owner_can_deactivate_organization() {
+    let (env, _, client) = setup();
+
+    let organization_id = BytesN::from_array(&env, &[110u8; 32]);
+    let owner = Address::generate(&env);
+
+    client.register_organization(&organization_id, &owner);
+    client.deactivate_organization(&organization_id);
+
+    let organization = client.get_organization(&organization_id);
+
+    assert!(!organization.active);
+    assert_eq!(organization.owner, owner);
+}
+
+#[test]
+fn test_organization_owner_can_reactivate_organization() {
+    let (env, _, client) = setup();
+
+    let organization_id = BytesN::from_array(&env, &[111u8; 32]);
+    let owner = Address::generate(&env);
+
+    client.register_organization(&organization_id, &owner);
+    client.deactivate_organization(&organization_id);
+    client.reactivate_organization(&organization_id);
+
+    let organization = client.get_organization(&organization_id);
+
+    assert!(organization.active);
+    assert_eq!(organization.owner, owner);
+}
+
+#[test]
+fn test_repeated_organization_deactivation_is_rejected() {
+    let (env, _, client) = setup();
+
+    let organization_id = BytesN::from_array(&env, &[112u8; 32]);
+    let owner = Address::generate(&env);
+
+    client.register_organization(&organization_id, &owner);
+    client.deactivate_organization(&organization_id);
+
+    assert_eq!(
+        client
+            .try_deactivate_organization(&organization_id)
+            .unwrap_err()
+            .unwrap(),
+        RegistryError::OrganizationAlreadyInactive
+    );
+}
+
+#[test]
+fn test_repeated_organization_reactivation_is_rejected() {
+    let (env, _, client) = setup();
+
+    let organization_id = BytesN::from_array(&env, &[113u8; 32]);
+    let owner = Address::generate(&env);
+
+    client.register_organization(&organization_id, &owner);
+
+    assert_eq!(
+        client
+            .try_reactivate_organization(&organization_id)
+            .unwrap_err()
+            .unwrap(),
+        RegistryError::OrganizationAlreadyActive
+    );
+}
+
+#[test]
+fn test_deactivation_of_nonexistent_organization_is_rejected() {
+    let (env, _, client) = setup();
+
+    let organization_id = BytesN::from_array(&env, &[114u8; 32]);
+
+    assert_eq!(
+        client
+            .try_deactivate_organization(&organization_id)
+            .unwrap_err()
+            .unwrap(),
+        RegistryError::OrganizationNotFound
+    );
+}
+
+#[test]
+fn test_reactivation_of_nonexistent_organization_is_rejected() {
+    let (env, _, client) = setup();
+
+    let organization_id = BytesN::from_array(&env, &[115u8; 32]);
+
+    assert_eq!(
+        client
+            .try_reactivate_organization(&organization_id)
+            .unwrap_err()
+            .unwrap(),
+        RegistryError::OrganizationNotFound
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_non_owner_cannot_deactivate_organization() {
+    let env = Env::default();
+    let contract_id = env.register(CredentialRegistry, ());
+    let client = CredentialRegistryClient::new(&env, &contract_id);
+
+    let organization_id = BytesN::from_array(&env, &[116u8; 32]);
+    let owner = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        env.storage().persistent().set(
+            &DataKey::Organization(organization_id.clone()),
+            &Organization {
+                owner,
+                active: true,
+            },
+        );
+    });
+
+    client.deactivate_organization(&organization_id);
+}
+
+#[test]
+#[should_panic]
+fn test_non_owner_cannot_reactivate_organization() {
+    let env = Env::default();
+    let contract_id = env.register(CredentialRegistry, ());
+    let client = CredentialRegistryClient::new(&env, &contract_id);
+
+    let organization_id = BytesN::from_array(&env, &[117u8; 32]);
+    let owner = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        env.storage().persistent().set(
+            &DataKey::Organization(organization_id.clone()),
+            &Organization {
+                owner,
+                active: false,
+            },
+        );
+    });
+
+    client.reactivate_organization(&organization_id);
+}
+
+#[test]
+fn test_deactivated_organization_cannot_authorize_issuers_or_anchor_credentials() {
+    let (env, _, client) = setup();
+
+    let organization_id = BytesN::from_array(&env, &[118u8; 32]);
+    let credential_id = BytesN::from_array(&env, &[119u8; 32]);
+    let commitment = BytesN::from_array(&env, &[120u8; 32]);
+
+    let owner = Address::generate(&env);
+    let issuer = Address::generate(&env);
+
+    client.register_organization(&organization_id, &owner);
+    client.deactivate_organization(&organization_id);
+
+    assert_eq!(
+        client
+            .try_authorize_issuer(&organization_id, &issuer)
+            .unwrap_err()
+            .unwrap(),
+        RegistryError::OrganizationInactive
+    );
+
+    assert_eq!(
+        client
+            .try_anchor_credential(&organization_id, &credential_id, &commitment, &issuer,)
+            .unwrap_err()
+            .unwrap(),
+        RegistryError::OrganizationInactive
+    );
+}
+
+// Deactivation must not prevent revocation of previously issued credentials.
+#[test]
+fn test_deactivated_organization_can_revoke_existing_credentials() {
+    let (env, _contract_id, client) = setup();
+
+    let organization_id = BytesN::from_array(&env, &[121; 32]);
+    let credential_id = BytesN::from_array(&env, &[122; 32]);
+    let commitment = BytesN::from_array(&env, &[123; 32]);
+
+    let owner = Address::generate(&env);
+    let issuer = Address::generate(&env);
+
+    client.register_organization(&organization_id, &owner);
+    client.authorize_issuer(&organization_id, &issuer);
+    client.anchor_credential(&organization_id, &credential_id, &commitment, &issuer);
+
+    client.deactivate_organization(&organization_id);
+
+    // The owner must retain the ability to revoke an existing credential.
+    client.revoke_credential(&credential_id, &owner);
+
+    let record = client.get_credential(&credential_id).unwrap();
+    assert!(record.revoked);
+}
+
+// Issuer authorisation follows the active state of its organisation.
+#[test]
+fn test_issuer_authorization_tracks_organization_lifecycle() {
+    let (env, _, client) = setup();
+
+    let organization_id = BytesN::from_array(&env, &[124; 32]);
+    let owner = Address::generate(&env);
+    let issuer = Address::generate(&env);
+
+    client.register_organization(&organization_id, &owner);
+    client.authorize_issuer(&organization_id, &issuer);
+
+    assert!(client.is_issuer_authorized(&organization_id, &issuer));
+
+    client.deactivate_organization(&organization_id);
+
+    assert!(!client.is_issuer_authorized(&organization_id, &issuer));
+
+    client.reactivate_organization(&organization_id);
+
+    assert!(client.is_issuer_authorized(&organization_id, &issuer));
 }
