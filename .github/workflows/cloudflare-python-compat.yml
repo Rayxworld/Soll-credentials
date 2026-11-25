@@ -49,9 +49,6 @@ jobs:
       - name: Resolve project dependencies
         run: uv sync
 
-      - name: Install Python Worker-compatible packages
-        run: uv run pywrangler sync
-
       - name: Start local Worker
         shell: bash
         run: |
