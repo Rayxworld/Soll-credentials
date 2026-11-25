@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "soll-credential-compat",
+  "main": "src/main.py",
+  "compatibility_date": "2026-11-25",
+  "compatibility_flags": [
+    "python_workers"
+  ]
+}
