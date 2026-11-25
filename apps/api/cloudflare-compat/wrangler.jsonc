@@ -5,5 +5,12 @@
   "compatibility_date": "2026-11-25",
   "compatibility_flags": [
     "python_workers"
-  ]
+  ],
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "55de42dd632f46a2be4b7187404f79d9"
+    }
+  ],
+  "workers_dev": true
 }

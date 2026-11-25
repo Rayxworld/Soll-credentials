@@ -42,3 +42,13 @@ htmlcov/
 
 # Logs
 *.log
+
+# Cloudflare Python compatibility test artifacts
+/apps/api/cloudflare-compat/.venv-workers/
+/apps/api/cloudflare-compat/python_modules/
+
+# Cloudflare local secrets and state
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.wrangler/
