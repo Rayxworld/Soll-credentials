@@ -1,0 +1,19 @@
+[project]
+name = "soll-credential-cloudflare-compat"
+version = "0.1.0"
+description = "Isolated Cloudflare Python Workers compatibility test for SOLL Credential"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi==0.165.0",
+    "SQLAlchemy==2.1.9",
+    "pg8000",
+]
+
+[dependency-groups]
+dev = [
+    "workers-py",
+    "workers-runtime-sdk",
+]
+
+[tool.uv]
+package = false
