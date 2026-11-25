@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "soll-credential-compat",
+  "account_id": "f20f3b3c98088fa1a6a9150fe41763a5",
   "main": "src/main.py",
   "compatibility_date": "2026-11-25",
   "compatibility_flags": [
