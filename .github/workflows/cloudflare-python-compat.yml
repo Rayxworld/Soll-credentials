@@ -1,0 +1,117 @@
+name: Cloudflare Python Worker compatibility
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - test/cloudflare-python-workers-ci
+    paths:
+      - "apps/api/cloudflare-compat/**"
+      - ".github/workflows/cloudflare-python-compat.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-python-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compatibility:
+    name: Build and smoke-test Python Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/api/cloudflare-compat
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/cloudflare-compat/pyproject.toml
+
+      - name: Show tool versions
+        run: |
+          node --version
+          npm --version
+          uv --version
+
+      - name: Resolve project dependencies
+        run: uv sync
+
+      - name: Install Python Worker-compatible packages
+        run: uv run pywrangler sync
+
+      - name: Start local Worker
+        shell: bash
+        run: |
+          uv run pywrangler dev --ip 127.0.0.1 --port 8787 > "$RUNNER_TEMP/cloudflare-worker.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/cloudflare-worker.pid"
+
+      - name: Smoke-test Worker endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ready=0
+          for attempt in $(seq 1 40); do
+            if curl --silent --fail http://127.0.0.1:8787/health > "$RUNNER_TEMP/health.json"; then
+              ready=1
+              break
+            fi
+            sleep 3
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            echo "Worker did not become ready. Worker log:"
+            cat "$RUNNER_TEMP/cloudflare-worker.log"
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          health = json.loads(Path(__import__("os").environ["RUNNER_TEMP"] + "/health.json").read_text())
+          assert health.get("status") == "ok", health
+          print("Health endpoint:", health)
+          PY
+
+          curl --silent --show-error --fail http://127.0.0.1:8787/compat > "$RUNNER_TEMP/compat.json"
+
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          result = json.loads((Path(os.environ["RUNNER_TEMP"]) / "compat.json").read_text())
+          expected = {
+              "fastapi": "0.165.0",
+              "sqlalchemy": "2.1.9",
+              "sqlalchemy_dialect": "postgresql",
+              "sqlalchemy_driver": "pg8000",
+              "pg8000_module": "pg8000",
+          }
+          for key, value in expected.items():
+              assert result.get(key) == value, f"{key}: expected {value!r}, got {result.get(key)!r}"
+          print("Runtime compatibility probe passed:")
+          print(json.dumps(result, indent=2))
+          PY
+
+      - name: Print Worker logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/cloudflare-worker.log" ]; then
+            cat "$RUNNER_TEMP/cloudflare-worker.log"
+          fi
