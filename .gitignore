@@ -31,3 +31,14 @@ secrets/
 Thumbs.db
 .vscode/
 .idea/
+
+# Test and coverage artifacts
+.coverage
+.coverage.*
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+
+# Logs
+*.log
