@@ -22,6 +22,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: compat
+          POSTGRES_USER: compat
+          POSTGRES_PASSWORD: compat
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U compat -d compat"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     defaults:
       run:
         working-directory: apps/api/cloudflare-compat
@@ -93,6 +108,8 @@ jobs:
 
       - name: Start local Worker
         shell: bash
+        env:
+          CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgresql://compat:compat@127.0.0.1:5432/compat
         run: |
           set -euo pipefail
           uv run pywrangler dev --ip 127.0.0.1 --port 8787 \
