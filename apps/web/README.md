@@ -34,3 +34,24 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+
+## Public credential verification
+
+The public verifier is available at `/verify`. It queries the FastAPI read-only endpoint:
+
+```text
+GET /api/v1/public/credentials/{credential_id}
+```
+
+Configure the frontend with the absolute origin of the deployed FastAPI service:
+
+```dotenv
+NEXT_PUBLIC_API_BASE_URL=https://your-api.example.com
+```
+
+For local development, use the local API origin, for example `http://127.0.0.1:8000`.
+
+The API's `CORS_ORIGINS` setting must include the exact frontend origin (including scheme and hostname). The public verification endpoint must also have appropriate edge-level rate limiting enabled before broad public launch.
+
+The verifier displays only the public on-chain record: credential ID, organisation ID, commitment, issuer wallet, issue timestamp, network, and revocation flag. It does not reveal recipient details. A matching on-chain record alone does not validate the off-chain certificate contents.
