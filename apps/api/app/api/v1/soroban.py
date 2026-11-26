@@ -109,6 +109,11 @@ def get_issuer_authorization_status(
             organization.on_chain_org_id,
             issuer_address,
         )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid Stellar issuer address.",
+        ) from exc
     except (SorobanNotConfiguredError, SorobanUnavailableError) as exc:
         _raise_chain_error(exc)
 
