@@ -185,17 +185,21 @@ export default function CredentialVerifier() {
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[.18em] text-[#72806f]">Registry result</p>
                 <h2 className={`mt-1 text-xl font-semibold tracking-[-.04em] ${result.revoked ? "text-[#914b35]" : "text-[#28553a]"}`}>
-                  {result.revoked ? "Credential revoked" : "Credential recorded"}
+                  {result.revoked ? "Credential revoked" : "Credential active"}
                 </h2>
               </div>
               <span className={`rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider ${result.revoked ? "bg-[#f3ded5] text-[#914b35]" : "bg-[#dcebcf] text-[#356342]"}`}>
-                {result.revoked ? "Revoked" : "On-chain record found"}
+                {result.revoked ? "Revoked" : "Active · Not revoked"}
               </span>
             </div>
             <dl className="grid gap-px bg-[#e9eee6] sm:grid-cols-2">
               <div className="bg-white p-4 sm:col-span-2">
                 <dt className="text-[10px] font-semibold uppercase tracking-wider text-[#8b978b]">Credential ID</dt>
                 <dd className="mt-2 break-all font-mono text-xs leading-5 text-[#294536]">{result.credential_id}</dd>
+              </div>
+              <div className="bg-white p-4">
+                <dt className="text-[10px] font-semibold uppercase tracking-wider text-[#8b978b]">Revocation status</dt>
+                <dd className="mt-2 text-sm font-semibold text-[#294536]">{result.revoked ? "Revoked" : "Active — not revoked"}</dd>
               </div>
               <div className="bg-white p-4">
                 <dt className="text-[10px] font-semibold uppercase tracking-wider text-[#8b978b]">Network</dt>
