@@ -197,7 +197,7 @@ export default function TemplateStudioPage() {
               {style === "modern" && <div className="absolute -right-16 top-10 h-44 w-44 rotate-45 opacity-10" style={{ background: accent }} />}
               <div className={`relative flex h-full flex-col items-center justify-center px-[7%] py-[5%] ${style === "modern" ? "pt-[14%]" : ""}`}>
                 <div className="mb-[2%] flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 text-lg font-bold sm:h-16 sm:w-16 sm:text-2xl" style={{ borderColor: accent, color: accent }}>
-                  {logo ? <img src={logo} alt="Organisation logo" className="h-full w-full object-contain" /> : <span>{organisation.trim().charAt(0) || "S"}</span>}
+                  {logo ? <span aria-label="Organisation logo" role="img" className="h-full w-full bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${logo})` }} /> : <span>{organisation.trim().charAt(0) || "S"}</span>}
                 </div>
                 <p className="text-[clamp(8px,1.3vw,13px)] font-semibold uppercase tracking-[0.2em]" style={{ color: accent }}>{organisation || "Your organisation"}</p>
                 <div className="my-[2%] h-px w-1/4" style={{ background: accent, opacity: 0.45 }} />
