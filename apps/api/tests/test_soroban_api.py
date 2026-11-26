@@ -142,3 +142,16 @@ def test_issuer_authorization_hides_other_tenants(client, db_session, monkeypatc
 
     assert caller.id != other_user.id
     assert response.status_code == 404
+
+
+def test_public_credential_status_is_rate_limited(client, monkeypatch):
+    monkeypatch.setattr(soroban_api, "get_credential_record", lambda _: None)
+
+    responses = [
+        client.get(f"/api/v1/public/credentials/{'dd' * 32}")
+        for _ in range(31)
+    ]
+
+    assert all(response.status_code == 404 for response in responses[:30])
+    assert responses[-1].status_code == 429
+    assert int(responses[-1].headers["Retry-After"]) > 0
