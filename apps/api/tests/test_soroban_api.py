@@ -125,6 +125,7 @@ def test_issuer_authorization_requires_membership(client, db_session, monkeypatc
 
 
 def test_issuer_authorization_hides_other_tenants(client, db_session, monkeypatch):
+    caller = authenticate(db_session, client)
     other_user = User(
         email=f"{uuid.uuid4().hex}@example.com",
         email_verified_at=datetime.now(timezone.utc),
@@ -139,4 +140,5 @@ def test_issuer_authorization_hides_other_tenants(client, db_session, monkeypatc
         f"/api/v1/organizations/{organization.id}/issuers/{issuer}/authorization"
     )
 
-    assert response.status_code == 401
+    assert caller.id != other_user.id
+    assert response.status_code == 404
