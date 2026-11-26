@@ -52,6 +52,6 @@ NEXT_PUBLIC_API_BASE_URL=https://your-api.example.com
 
 For local development, use the local API origin, for example `http://127.0.0.1:8000`.
 
-The API's `CORS_ORIGINS` setting must include the exact frontend origin (including scheme and hostname). The public verification endpoint must also have appropriate edge-level rate limiting enabled before broad public launch.
+The API's `CORS_ORIGINS` setting must include the exact frontend origin (including scheme and hostname). The API applies a PostgreSQL-backed per-IP limit of 30 public credential lookups per minute. Configure trusted proxy CIDRs correctly when deploying behind a proxy; an edge-level rate limit is also recommended for production.
 
 The verifier displays only the public on-chain record: credential ID, organisation ID, commitment, issuer wallet, issue timestamp, network, and revocation flag. It does not reveal recipient details. A matching on-chain record alone does not validate the off-chain certificate contents.
