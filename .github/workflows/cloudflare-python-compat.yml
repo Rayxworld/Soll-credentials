@@ -1,0 +1,253 @@
+name: Cloudflare Python Worker compatibility
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - test/cloudflare-python-workers-ci
+    paths:
+      - "apps/api/cloudflare-compat/**"
+      - ".github/workflows/cloudflare-python-compat.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-python-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compatibility-and-deployment:
+    name: Validate, deploy, and test Neon connectivity
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: compat
+          POSTGRES_USER: compat
+          POSTGRES_PASSWORD: compat
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U compat -d compat"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: apps/api/cloudflare-compat
+
+    env:
+      WORKER_URL: https://soll-credential-compat.fafiraymond7.workers.dev
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+
+      - name: Show tool versions
+        run: |
+          node --version
+          npm --version
+          uv --version
+
+      - name: Validate dependency lock
+        run: uv lock --check
+
+      - name: Install project dependencies
+        run: uv sync --frozen
+
+      - name: Validate deployment secrets
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          COMPAT_TEST_TOKEN: ${{ secrets.COMPAT_TEST_TOKEN }}
+          OTP_PEPPER: ${{ secrets.OTP_PEPPER }}
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN COMPAT_TEST_TOKEN OTP_PEPPER; do
+            if [ -z "${!name}" ]; then
+              echo "Required GitHub secret is missing: $name"
+              exit 1
+            fi
+          done
+          echo "All required deployment secrets are present."
+
+      - name: Prepare local Worker secrets
+        shell: bash
+        env:
+          COMPAT_TEST_TOKEN: ${{ secrets.COMPAT_TEST_TOKEN }}
+          OTP_PEPPER: ${{ secrets.OTP_PEPPER }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf 'COMPAT_TEST_TOKEN=%s\nOTP_PEPPER=%s\n' \
+            "$COMPAT_TEST_TOKEN" "$OTP_PEPPER" > .dev.vars
+
+      - name: Validate Python application
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/src"
+          uv run python -m compileall -q src
+          uv run python -c "from app.main import app; assert '/api/v1/health' in app.openapi()['paths']; assert '/compat/database' in app.openapi()['paths']; print('Actual FastAPI application imports and routes verified.')"
+
+      - name: Start local Worker
+        shell: bash
+        env:
+          CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgresql://compat:compat@127.0.0.1:5432/compat
+        run: |
+          set -euo pipefail
+          uv run pywrangler dev --ip 127.0.0.1 --port 8787 \
+            > "$RUNNER_TEMP/cloudflare-worker.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/cloudflare-worker.pid"
+
+      - name: Smoke-test local Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=0
+          for attempt in $(seq 1 40); do
+            if curl --silent --fail \
+              http://127.0.0.1:8787/api/v1/health \
+              > "$RUNNER_TEMP/health.json"; then
+              ready=1
+              break
+            fi
+            sleep 3
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            echo "Local Worker did not become healthy."
+            cat "$RUNNER_TEMP/cloudflare-worker.log"
+            exit 1
+          fi
+
+          python - "$RUNNER_TEMP/health.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          result = json.loads(Path(sys.argv[1]).read_text())
+          assert result.get("status") == "healthy", result
+          print("Local Worker health check passed.")
+          PY
+
+      - name: Deploy Python Worker
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          uv run pywrangler deploy
+
+      - name: Upload Worker secrets
+        shell: bash
+        env:
+          COMPAT_TEST_TOKEN: ${{ secrets.COMPAT_TEST_TOKEN }}
+          OTP_PEPPER: ${{ secrets.OTP_PEPPER }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$COMPAT_TEST_TOKEN" \
+            | uv run pywrangler secret put COMPAT_TEST_TOKEN
+          printf '%s' "$OTP_PEPPER" \
+            | uv run pywrangler secret put OTP_PEPPER
+
+      - name: Verify deployed Worker health
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=0
+          for attempt in $(seq 1 20); do
+            if curl --silent --fail \
+              "$WORKER_URL/api/v1/health" \
+              > "$RUNNER_TEMP/deployed-health.json"; then
+              ready=1
+              break
+            fi
+            sleep 3
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            echo "Deployed Worker did not become healthy."
+            exit 1
+          fi
+
+          python - "$RUNNER_TEMP/deployed-health.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          result = json.loads(Path(sys.argv[1]).read_text())
+          assert result.get("status") == "healthy", result
+          print("Deployed Worker health check passed.")
+          PY
+
+      - name: Verify protected Neon PostgreSQL connection
+        shell: bash
+        env:
+          COMPAT_TEST_TOKEN: ${{ secrets.COMPAT_TEST_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          status_code=$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/database-test.json" \
+            --write-out "%{http_code}" \
+            --header "Authorization: Bearer ${COMPAT_TEST_TOKEN}" \
+            "$WORKER_URL/compat/database")
+
+          if [ "$status_code" != "200" ]; then
+            echo "Database test returned HTTP $status_code."
+            cat "$RUNNER_TEMP/database-test.json"
+            exit 1
+          fi
+
+          python - "$RUNNER_TEMP/database-test.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          result = json.loads(Path(sys.argv[1]).read_text())
+          assert result.get("status") == "success", result
+          assert result.get("connection") == "established", result
+          assert result.get("provider") == (
+              "Neon PostgreSQL via Cloudflare Hyperdrive"
+          ), result
+          assert result.get("result", {}).get("test_result") == 1, result
+
+          print("Neon PostgreSQL connection through Hyperdrive succeeded.")
+          print("Read-only SELECT query verified.")
+          PY
+
+      - name: Stop local Worker and remove local secrets
+        if: always()
+        shell: bash
+        run: |
+          rm -f .dev.vars
+          if [ -f "$RUNNER_TEMP/cloudflare-worker.pid" ]; then
+            worker_pid=$(cat "$RUNNER_TEMP/cloudflare-worker.pid")
+            pkill -P "$worker_pid" 2>/dev/null || true
+            kill "$worker_pid" 2>/dev/null || true
+          fi
+
+      - name: Print Worker logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/cloudflare-worker.log" ]; then
+            cat "$RUNNER_TEMP/cloudflare-worker.log"
+          fi
