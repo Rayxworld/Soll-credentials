@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     smtp_starttls: bool = True
     smtp_ssl: bool = False
     smtp_timeout_seconds: int = 10
+
+    # Soroban is deliberately disabled until the deployment supplies an
+    # explicit RPC endpoint, network passphrase, and contract ID.
+    soroban_rpc_url: str | None = None
+    soroban_network_passphrase: str | None = None
+    soroban_contract_id: str | None = None
+    stellar_network: str = "testnet"
 
     model_config = SettingsConfigDict(
         env_file=API_ROOT / ".env",

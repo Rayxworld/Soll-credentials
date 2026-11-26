@@ -16,11 +16,11 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="relative flex w-full shrink-0 flex-col bg-[#173b30] px-5 py-5 text-[#f4f3e9] md:sticky md:top-0 md:h-screen md:w-[252px] md:px-5 md:py-7">
+    <aside className="relative flex w-full shrink-0 flex-col bg-[#173b30] px-5 py-5 text-[#f4f3e9] print:hidden md:sticky md:top-0 md:h-screen md:w-[252px] md:px-5 md:py-7">
       <Link href="/" className="mb-8 flex items-center gap-3 px-2">
-        <span className="grid h-10 w-10 place-items-center rounded-[13px] bg-[#c9ef78] text-xl font-black tracking-[-.12em] text-[#173b30]">s.</span>
+        <span className="grid h-10 w-10 place-items-center rounded-[13px] bg-[#c9ef78] text-xl font-black tracking-[-.12em] text-[#173b30]">S.</span>
         <span>
-          <span className="block text-[17px] font-semibold tracking-[-.04em]">soll<span className="text-[#c9ef78]">/</span></span>
+          <span className="block text-[17px] font-extrabold tracking-[-.035em]">SOLL</span>
           <span className="block text-[9px] font-semibold uppercase tracking-[.2em] text-white/45">Credential infrastructure</span>
         </span>
       </Link>

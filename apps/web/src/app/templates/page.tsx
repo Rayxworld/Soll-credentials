@@ -171,7 +171,7 @@ export default function TemplateStudioPage() {
               Save draft
             </button>
             <button type="button" onClick={() => window.print()} className="rounded-lg border border-[#e1e6dc] bg-[#fbfcf8] px-4 py-2.5 text-sm font-semibold text-[#53675a] transition hover:bg-[#f0f3eb]">
-              Print / Save PDF
+              Save / Print certificate
             </button>
           </div>
           {notice && <p role="status" className="text-xs font-medium text-emerald-700">{notice}</p>}
@@ -189,7 +189,7 @@ export default function TemplateStudioPage() {
 
           <div className="rounded-2xl border border-[#e1e6dc] bg-[#f0f2eb] p-3 shadow-inner sm:p-6 print:border-0 print:bg-[#fbfcf8] print:p-0 print:shadow-none">
             <article
-              className={`relative mx-auto aspect-[1.414/1] w-full max-w-[900px] overflow-hidden bg-[#fbfcf8] text-center shadow-xl print:shadow-none ${style === "classic" ? "border-[10px]" : style === "minimal" ? "border border-[#e1e6dc]" : "border-0"}`}
+              className={`certificate-print-area relative mx-auto aspect-[1.414/1] w-full max-w-[900px] overflow-hidden bg-[#fbfcf8] text-center shadow-xl print:shadow-none ${style === "classic" ? "border-[10px]" : style === "minimal" ? "border border-[#e1e6dc]" : "border-0"}`}
               style={{ borderColor: style === "classic" ? accent : undefined }}
             >
               {style === "modern" && <div className="absolute inset-x-0 top-0 h-[13%]" style={{ background: accent }} />}
@@ -199,7 +199,7 @@ export default function TemplateStudioPage() {
                 <div className="mb-[2%] flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 text-lg font-bold sm:h-16 sm:w-16 sm:text-2xl" style={{ borderColor: accent, color: accent }}>
                   {logo ? <span aria-label="Organisation logo" role="img" className="h-full w-full bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${logo})` }} /> : <span>{organisation.trim().charAt(0) || "S"}</span>}
                 </div>
-                <p className="text-[clamp(8px,1.3vw,13px)] font-semibold uppercase tracking-[0.2em]" style={{ color: accent }}>{organisation || "Your organisation"}</p>
+                <p className="text-[clamp(8px,1.3vw,13px)] font-extrabold uppercase tracking-[0.2em]" style={{ color: accent }}>{organisation || "Your organisation"}</p>
                 <div className="my-[2%] h-px w-1/4" style={{ background: accent, opacity: 0.45 }} />
                 <p className="text-[clamp(9px,1.7vw,17px)] font-medium text-[#879188]">{certificateTitle || "Certificate of Achievement"}</p>
                 <p className="mt-[2%] font-serif text-[clamp(22px,5vw,48px)] leading-tight text-[#20382c]">{recipient || "Recipient name"}</p>
