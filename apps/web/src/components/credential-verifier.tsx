@@ -29,7 +29,12 @@ function extractCredentialId(value: string): string {
   // Accept either a raw 32-byte hex ID or a verification URL / QR payload.
   try {
     const parsed = new URL(input);
-    return parsed.pathname.split("/").filter(Boolean).at(-1) ?? "";
+    return (
+      parsed.searchParams.get("credential_id") ??
+      parsed.searchParams.get("id") ??
+      parsed.pathname.split("/").filter(Boolean).at(-1) ??
+      ""
+    );
   } catch {
     return input;
   }
