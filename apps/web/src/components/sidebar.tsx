@@ -20,7 +20,7 @@ export default function Sidebar() {
       <Link href="/" className="mb-8 flex items-center gap-3 px-2">
         <span className="grid h-10 w-10 place-items-center rounded-[13px] bg-[#c9ef78] text-xl font-black tracking-[-.12em] text-[#173b30]">S.</span>
         <span>
-          <span className="block text-[17px] font-extrabold tracking-[-.035em]">SOLL<span className="text-[#c9ef78]">/</span></span>
+          <span className="block text-[17px] font-extrabold tracking-[-.035em]">SOLL</span>
           <span className="block text-[9px] font-semibold uppercase tracking-[.2em] text-white/45">Credential infrastructure</span>
         </span>
       </Link>
