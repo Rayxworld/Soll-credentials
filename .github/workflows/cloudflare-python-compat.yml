@@ -74,12 +74,11 @@ jobs:
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           COMPAT_TEST_TOKEN: ${{ secrets.COMPAT_TEST_TOKEN }}
           OTP_PEPPER: ${{ secrets.OTP_PEPPER }}
         run: |
           set -euo pipefail
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID COMPAT_TEST_TOKEN OTP_PEPPER; do
+          for name in CLOUDFLARE_API_TOKEN COMPAT_TEST_TOKEN OTP_PEPPER; do
             if [ -z "${!name}" ]; then
               echo "Required GitHub secret is missing: $name"
               exit 1
@@ -151,7 +150,6 @@ jobs:
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
           uv run pywrangler deploy
@@ -162,7 +160,6 @@ jobs:
           COMPAT_TEST_TOKEN: ${{ secrets.COMPAT_TEST_TOKEN }}
           OTP_PEPPER: ${{ secrets.OTP_PEPPER }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
           printf '%s' "$COMPAT_TEST_TOKEN" \
