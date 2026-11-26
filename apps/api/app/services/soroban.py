@@ -116,11 +116,16 @@ def is_issuer_authorized(
     organization_id: bytes,
     issuer_address: str,
 ) -> bool:
+    try:
+        issuer_value = scval.to_address(issuer_address)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Invalid Stellar issuer address.") from exc
+
     value = _invoke_read(
         "is_issuer_authorized",
         [
             scval.to_bytes(organization_id),
-            scval.to_address(issuer_address),
+            issuer_value,
         ],
     )
     if not isinstance(value, bool):
