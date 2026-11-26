@@ -23,7 +23,7 @@ export default function VerifyPage() {
       </header>
       <CredentialVerifier />
       <footer className="mx-auto mt-12 max-w-5xl border-t border-[#e2e7df] pt-5 text-center text-[10px] text-[#9aa39a]">
-        © {new Date().getFullYear()} SOLL Credential. Built for verifiable achievement.
+        © SOLL Credential. Built for verifiable achievement.
       </footer>
     </main>
   );
