@@ -64,6 +64,27 @@ jobs:
       - name: Build credential registry WASM
         run: stellar contract build --package credential-registry
 
+      - name: Compare existing Testnet contract bytecode
+        shell: bash
+        env:
+          EXISTING_CONTRACT_ID: CB2PMNHRE6YGQQW6T7ETAJ6XIN4H26BCC5HP7BL52224OUNFIIVJZGDT
+        run: |
+          set -euo pipefail
+          deployed_wasm="/tmp/existing-testnet-contract.wasm"
+          if stellar contract fetch --id "$EXISTING_CONTRACT_ID" --network testnet --out-file "$deployed_wasm"; then
+            local_hash="$(sha256sum target/wasm32v1-none/release/credential_registry.wasm | cut -d ' ' -f1)"
+            deployed_hash="$(sha256sum "$deployed_wasm" | cut -d ' ' -f1)"
+            echo "Local registry WASM SHA-256: $local_hash"
+            echo "Existing Testnet contract WASM SHA-256: $deployed_hash"
+            if [ "$local_hash" = "$deployed_hash" ]; then
+              echo "MATCH: existing Testnet contract runs this exact build."
+            else
+              echo "MISMATCH: existing Testnet contract is not this exact build."
+            fi
+          else
+            echo "Could not fetch the existing Testnet contract; it may be invalid, unavailable, or not a Wasm contract."
+          fi
+
       - name: Verify WASM artifact
         shell: bash
         run: |
