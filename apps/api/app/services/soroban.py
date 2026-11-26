@@ -1,6 +1,7 @@
 from typing import Any
 
-from stellar_sdk import ContractClient, scval
+from stellar_sdk import scval
+from stellar_sdk.contract import ContractClient
 
 from app.core.config import settings
 
