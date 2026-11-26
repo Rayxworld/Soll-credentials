@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from app.schemas.soroban import (
     IssuerAuthorizationStatus,
     PublicCredentialStatus,
 )
+from app.services.ip_rate_limit import enforce_ip_rate_limit
 from app.services.soroban import (
     SorobanNotConfiguredError,
     SorobanUnavailableError,
@@ -39,9 +40,13 @@ def _raise_chain_error(exc: Exception) -> None:
     response_model=PublicCredentialStatus,
 )
 def get_public_credential_status(
+    request: Request,
     credential_id: str = Path(pattern=r"^[0-9a-fA-F]{64}$"),
+    db: Session = Depends(get_db),
 ) -> PublicCredentialStatus:
-    """Return public on-chain status only; no recipient data is exposed."""
+    """Return rate-limited public on-chain status; no recipient data is exposed."""
+    enforce_ip_rate_limit(request, db, "public_credential")
+
     try:
         record = get_credential_record(bytes.fromhex(credential_id))
     except (SorobanNotConfiguredError, SorobanUnavailableError) as exc:
