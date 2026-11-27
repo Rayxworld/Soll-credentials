@@ -1,4 +1,6 @@
-﻿from fastapi import (
+﻿import secrets
+
+from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
@@ -14,9 +16,11 @@ from app.api.v1.dependencies import (
     require_csrf,
 )
 from app.core.config import settings
+from app.core.security import hash_token
 from app.db.dependencies import get_db
 from app.schemas.auth import (
     AuthenticatedResponse,
+    CSRFTokenResponse,
     AuthenticatedUserResponse,
     MessageResponse,
     OTPRequest,
@@ -202,3 +206,29 @@ def logout(
     clear_auth_cookies(response)
 
     return MessageResponse(message="Signed out successfully.")
+
+
+@router.post(
+    "/csrf",
+    response_model=CSRFTokenResponse,
+)
+def refresh_csrf_token(
+    response: Response,
+    auth: AuthContext = Depends(get_current_auth),
+    db: Session = Depends(get_db),
+) -> CSRFTokenResponse:
+    """Rotate the CSRF token for an existing authenticated session."""
+    csrf_token = secrets.token_urlsafe(32)
+    auth.session.csrf_token_hash = hash_token(csrf_token)
+    db.commit()
+
+    response.set_cookie(
+        key=settings.csrf_cookie_name,
+        value=csrf_token,
+        max_age=settings.session_ttl_days * 24 * 60 * 60,
+        httponly=False,
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
+        path="/",
+    )
+    return CSRFTokenResponse(csrf_token=csrf_token)
