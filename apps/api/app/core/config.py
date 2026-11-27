@@ -18,7 +18,9 @@ class Settings(BaseSettings):
     session_ttl_days: int = 7
     session_cookie_name: str = "soll_session"
     csrf_cookie_name: str = "soll_csrf"
-    # Cross-origin Vercel -> Render requests require Secure + SameSite=None cookies.\n    # Local HTTP deployments can override these with COOKIE_SECURE=false and COOKIE_SAMESITE=lax.\n    cookie_secure: bool = True
+    # Cross-origin Vercel -> Render requests require Secure + SameSite=None cookies.
+    # Local HTTP deployments can override these with COOKIE_SECURE=false and COOKIE_SAMESITE=lax.
+    cookie_secure: bool = True
     cookie_samesite: str = "none"
 
     cors_origins: str = "http://localhost:3000,https://soll-credentials.vercel.app"
