@@ -264,3 +264,25 @@ def test_wrong_otp_attempt_is_persisted(
 
     assert challenge is not None
     assert challenge.attempt_count == 1
+
+
+
+def test_csrf_token_can_be_rotated_for_authenticated_session(client, monkeypatch):
+    authenticate_client(
+        client,
+        monkeypatch,
+        "csrf-rotation@example.com",
+    )
+
+    response = client.post("/api/v1/auth/csrf")
+
+    assert response.status_code == 200
+    token = response.json()["csrf_token"]
+    assert token
+    assert client.cookies.get("soll_csrf") == token
+
+    logout = client.post(
+        "/api/v1/auth/logout",
+        headers={"X-CSRF-Token": token},
+    )
+    assert logout.status_code == 200

@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,17 +21,19 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     cookie_samesite: str = "lax"
 
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,https://soll-credentials.vercel.app"
     trusted_proxy_cidrs: str = ""
 
-    smtp_host: str | None = None
-    smtp_port: int = 587
-    smtp_username: str | None = None
-    smtp_password: SecretStr | None = None
-    smtp_from_email: str | None = None
-    smtp_starttls: bool = True
-    smtp_ssl: bool = False
-    smtp_timeout_seconds: int = 10
+    resend_api_key: SecretStr | None = None
+    resend_from_email: str | None = None
+    resend_timeout_seconds: int = 15
+
+    # Soroban is deliberately disabled until the deployment supplies an
+    # explicit RPC endpoint, network passphrase, and contract ID.
+    soroban_rpc_url: str | None = None
+    soroban_network_passphrase: str | None = None
+    soroban_contract_id: str | None = None
+    stellar_network: str = "testnet"
 
     model_config = SettingsConfigDict(
         env_file=API_ROOT / ".env",

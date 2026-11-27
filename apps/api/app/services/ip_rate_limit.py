@@ -41,6 +41,10 @@ RATE_LIMITS = {
         limit=30,
         window_seconds=15 * 60,
     ),
+    "public_credential": RateLimitPolicy(
+        limit=30,
+        window_seconds=60,
+    ),
 }
 
 

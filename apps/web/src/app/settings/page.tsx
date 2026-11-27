@@ -195,7 +195,7 @@ export default function SettingsPage() {
             <p className="text-xs font-bold uppercase tracking-[.16em] text-[#397454]">Stellar · Testnet</p>
             <h2 className="mt-2 text-lg font-semibold text-[#20382c]">Organisation wallet</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#718075]">
-              Connect the organisation's own Varial wallet (formerly Freighter). SOLL reads the public
+              Connect the organisation&apos;s own Varial wallet (formerly Freighter). SOLL reads the public
               address and network only; your secret key stays in the wallet.
             </p>
           </div>
