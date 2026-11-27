@@ -1,75 +1,56 @@
 import logging
-import smtplib
-from email.message import EmailMessage
+
+import httpx
 
 from app.core.config import settings
 
 
 logger = logging.getLogger(__name__)
 
+RESEND_EMAILS_URL = "https://api.resend.com/emails"
+
 
 def send_otp_email(email: str, code: str) -> None:
-    if not settings.smtp_host or not settings.smtp_from_email:
-        raise RuntimeError("SMTP email delivery is not configured.")
+    """Deliver a one-time sign-in code through Resend's HTTPS API.
 
-    if settings.smtp_starttls and settings.smtp_ssl:
-        raise RuntimeError("SMTP STARTTLS and SSL cannot both be enabled.")
+    HTTPS is used instead of SMTP because some hosting environments block
+    outbound SMTP ports. Never log the recipient, OTP, API key, or response
+    body: provider errors can contain sensitive request details.
+    """
+    if settings.resend_api_key is None or not settings.resend_from_email:
+        raise RuntimeError("Resend email delivery is not configured.")
 
-    message = EmailMessage()
-    message["Subject"] = "Your SOLL Credential sign-in code"
-    message["From"] = settings.smtp_from_email
-    message["To"] = email
-    message.set_content(
-        "Your SOLL Credential sign-in code is:\n\n"
-        f"{code}\n\n"
-        "This code expires in five minutes and can only be used once. "
-        "If you did not request this code, you can ignore this email."
-    )
-
-    stage = "connection"
+    message = {
+        "from": settings.resend_from_email,
+        "to": [email],
+        "subject": "Your SOLL Credential sign-in code",
+        "text": (
+            "Your SOLL Credential sign-in code is:\n\n"
+            f"{code}\n\n"
+            "This code expires in five minutes and can only be used once. "
+            "If you did not request this code, you can ignore this email."
+        ),
+    }
 
     try:
-        if settings.smtp_ssl:
-            server_context = smtplib.SMTP_SSL(
-                settings.smtp_host,
-                settings.smtp_port,
-                timeout=settings.smtp_timeout_seconds,
-            )
-        else:
-            server_context = smtplib.SMTP(
-                settings.smtp_host,
-                settings.smtp_port,
-                timeout=settings.smtp_timeout_seconds,
-            )
-
-        with server_context as server:
-            server.ehlo()
-
-            if settings.smtp_starttls and not settings.smtp_ssl:
-                server.starttls()
-                server.ehlo()
-
-            if settings.smtp_username:
-                if settings.smtp_password is None:
-                    raise RuntimeError(
-                        "SMTP password is required when username is configured."
-                    )
-
-                stage = "authentication"
-                server.login(
-                    settings.smtp_username,
-                    settings.smtp_password.get_secret_value(),
-                )
-
-            stage = "message_delivery"
-            server.send_message(message)
-
-    except (smtplib.SMTPException, OSError) as exc:
-        smtp_code = getattr(exc, "smtp_code", None)
+        response = httpx.post(
+            RESEND_EMAILS_URL,
+            headers={
+                "Authorization": (
+                    f"Bearer {settings.resend_api_key.get_secret_value()}"
+                ),
+                "Content-Type": "application/json",
+            },
+            json=message,
+            timeout=settings.resend_timeout_seconds,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        response = getattr(exc, "response", None)
+        status_code = response.status_code if response is not None else None
         logger.error(
-            "SMTP delivery failed during %s (exception_type=%s, smtp_code=%s)",
-            stage,
+            "Resend email delivery failed (exception_type=%s, http_status=%s)",
             type(exc).__name__,
-            smtp_code,
+            status_code,
         )
         raise RuntimeError("Unable to deliver sign-in email.") from exc
