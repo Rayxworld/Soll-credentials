@@ -1,7 +1,11 @@
-﻿import smtplib
+import logging
+import smtplib
 from email.message import EmailMessage
 
 from app.core.config import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 def send_otp_email(email: str, code: str) -> None:
@@ -21,6 +25,8 @@ def send_otp_email(email: str, code: str) -> None:
         "This code expires in five minutes and can only be used once. "
         "If you did not request this code, you can ignore this email."
     )
+
+    stage = "connection"
 
     try:
         if settings.smtp_ssl:
@@ -49,12 +55,21 @@ def send_otp_email(email: str, code: str) -> None:
                         "SMTP password is required when username is configured."
                     )
 
+                stage = "authentication"
                 server.login(
                     settings.smtp_username,
                     settings.smtp_password.get_secret_value(),
                 )
 
+            stage = "message_delivery"
             server.send_message(message)
 
     except (smtplib.SMTPException, OSError) as exc:
+        smtp_code = getattr(exc, "smtp_code", None)
+        logger.error(
+            "SMTP delivery failed during %s (exception_type=%s, smtp_code=%s)",
+            stage,
+            type(exc).__name__,
+            smtp_code,
+        )
         raise RuntimeError("Unable to deliver sign-in email.") from exc
