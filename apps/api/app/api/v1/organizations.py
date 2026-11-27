@@ -1,13 +1,20 @@
-from uuid import UUID
+import re
+import unicodedata
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.v1.dependencies import AuthContext, get_current_auth
+from app.api.v1.dependencies import AuthContext, get_current_auth, require_csrf
 from app.db.dependencies import get_db
 from app.models import Organization, OrganizationMembership
-from app.schemas.organization import OrganizationDetail, OrganizationSummary
+from app.schemas.organization import (
+    OrganizationCreateRequest,
+    OrganizationDetail,
+    OrganizationSummary,
+)
 
 
 router = APIRouter(prefix="/organizations", tags=["Organizations"])
@@ -26,6 +33,56 @@ def _summary(
         chain_registered=organization.on_chain_org_id is not None,
         created_at=organization.created_at,
     )
+
+
+def _make_slug(name: str) -> str:
+    """Create a URL-safe, non-empty slug without trusting client input."""
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    base = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")
+    base = (base or "organization")[:68].rstrip("-")
+    return f"{base}-{uuid4().hex[:8]}"
+
+
+@router.post(
+    "",
+    response_model=OrganizationSummary,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_organization(
+    payload: OrganizationCreateRequest,
+    auth: AuthContext = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> OrganizationSummary:
+    """Create an organization and make the authenticated creator its owner."""
+    organization = Organization(
+        name=payload.name,
+        slug=_make_slug(payload.name),
+    )
+    try:
+        db.add(organization)
+        db.flush()
+
+        membership = OrganizationMembership(
+            organization_id=organization.id,
+            user_id=auth.user.id,
+            role="owner",
+            is_active=True,
+        )
+        db.add(membership)
+        db.flush()
+        db.refresh(organization)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The organization could not be created because of a data conflict.",
+        ) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+    return _summary(organization, membership)
 
 
 @router.get("", response_model=list[OrganizationSummary])
