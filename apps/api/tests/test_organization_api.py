@@ -37,6 +37,7 @@ def create_authenticated_user(db_session, client):
     created = create_auth_session(db_session, user)
     db_session.commit()
     client.cookies.set("soll_session", created.session_token)
+    client.cookies.set("soll_csrf", created.csrf_token)
     return user
 
 
@@ -132,3 +133,47 @@ def test_inactive_membership_is_not_visible(client, db_session):
     assert list_response.status_code == 200
     assert list_response.json() == []
     assert detail_response.status_code == 404
+
+
+
+def test_create_organization_requires_authentication(client):
+    response = client.post(
+        "/api/v1/organizations",
+        json={"name": "New Training Centre"},
+    )
+    assert response.status_code == 401
+
+
+def test_create_organization_requires_csrf(client, db_session):
+    create_authenticated_user(db_session, client)
+    response = client.post(
+        "/api/v1/organizations",
+        json={"name": "New Training Centre"},
+    )
+    assert response.status_code == 403
+
+
+def test_create_organization_assigns_creator_as_owner(client, db_session):
+    user = create_authenticated_user(db_session, client)
+    csrf_token = client.cookies.get("soll_csrf")
+
+    response = client.post(
+        "/api/v1/organizations",
+        json={"name": "  Port Harcourt   Tech Academy  "},
+        headers={"X-CSRF-Token": csrf_token},
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"] == "Port Harcourt Tech Academy"
+    assert data["role"] == "owner"
+    assert data["is_active"] is True
+    assert data["chain_registered"] is False
+    assert data["slug"].startswith("port-harcourt-tech-academy-")
+
+    membership = db_session.query(OrganizationMembership).filter_by(
+        organization_id=uuid.UUID(data["id"]),
+        user_id=user.id,
+    ).one()
+    assert membership.role == "owner"
+    assert membership.is_active is True
