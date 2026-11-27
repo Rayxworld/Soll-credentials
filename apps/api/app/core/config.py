@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     cookie_samesite: str = "lax"
 
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,https://soll-credentials.vercel.app"
     trusted_proxy_cidrs: str = ""
 
     smtp_host: str | None = None

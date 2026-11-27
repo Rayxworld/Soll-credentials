@@ -23,3 +23,7 @@ class AuthenticatedUserResponse(BaseModel):
 class AuthenticatedResponse(BaseModel):
     user: AuthenticatedUserResponse
     csrf_token: str
+
+
+class CSRFTokenResponse(BaseModel):
+    csrf_token: str
